@@ -1,10 +1,10 @@
 """Pipeline endpoints.
 
 Contracts live here so the frontend can be built in parallel. Phase 7
-implemented audio upload + FFmpeg metadata extraction; Phase 8 adds
-transcription via faster-whisper. The remaining lyrics / analyze /
-plan-scenes / generate endpoints stay as 501 stubs until the phases
-that implement them.
+implemented audio upload + FFmpeg metadata extraction; Phase 8 added
+transcription via faster-whisper; Phase 9 wires lyrics upload +
+LLM-driven lyrics analysis. The remaining plan-scenes / generate
+endpoints stay as 501 stubs until the phases that implement them.
 """
 
 from __future__ import annotations
@@ -20,13 +20,23 @@ from backend.app.db.models import AssetKind, MediaAsset, Project
 from backend.app.schemas import (
     AudioMetadataOut,
     AudioUploadResponse,
+    LyricsAnalysisResponse,
+    LyricsUploadRequest,
+    LyricsUploadResponse,
     Message,
     TranscriptionRequest,
     TranscriptionResponse,
     TranscriptSegmentOut,
 )
 from backend.app.services.audio import save_upload
+from backend.app.services.lyrics import (
+    LyricsAnalysisError,
+    analyze_lyrics,
+    save_lyrics,
+)
 from backend.app.services.transcription import transcribe_project
+from models.llm import get_llm_engine
+from models.llm.base import LLMEngine
 from pipeline.audio_analysis import AudioAnalysisError, probe
 from pipeline.transcription import TranscriptionError
 
@@ -97,10 +107,18 @@ async def upload_audio(
     )
 
 
-@router.post("/lyrics", response_model=Message)
-def upload_lyrics(project_id: str, db: Session = Depends(get_db)) -> Message:
-    _require_project(db, project_id)
-    raise _not_implemented("Lyrics upload")
+@router.post("/lyrics", response_model=LyricsUploadResponse)
+def upload_lyrics(
+    project_id: str,
+    payload: LyricsUploadRequest,
+    db: Session = Depends(get_db),
+) -> LyricsUploadResponse:
+    project = _require_project(db, project_id)
+    save_lyrics(db=db, project=project, text=payload.text)
+    return LyricsUploadResponse(
+        project_id=project.id,
+        lyrics_length=len(project.lyrics or ""),
+    )
 
 
 @router.post(
@@ -148,10 +166,35 @@ def transcribe_endpoint(
     )
 
 
-@router.post("/analyze", response_model=Message)
-def analyze(project_id: str, db: Session = Depends(get_db)) -> Message:
-    _require_project(db, project_id)
-    raise _not_implemented("Audio + lyrics analysis")
+@router.post(
+    "/analyze",
+    response_model=LyricsAnalysisResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def analyze(
+    project_id: str,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    engine: LLMEngine = Depends(get_llm_engine),
+) -> LyricsAnalysisResponse:
+    project = _require_project(db, project_id)
+    try:
+        analysis, asset = await analyze_lyrics(
+            db=db, settings=settings, project=project, engine=engine
+        )
+    except LyricsAnalysisError as exc:
+        log.warning("lyrics analysis failed project=%s: %s", project.id, exc)
+        code = 409 if "no lyrics" in str(exc).lower() else 500
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+    return LyricsAnalysisResponse(
+        project_id=project.id,
+        engine=engine.name,
+        model=settings.llm_model,
+        analysis=analysis,
+        analysis_asset_id=asset.id,
+        analysis_path=asset.path,
+    )
 
 
 @router.post("/plan-scenes", response_model=Message)
