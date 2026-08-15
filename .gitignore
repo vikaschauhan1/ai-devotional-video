@@ -58,6 +58,7 @@ models/**/*.gguf
 *.sqlite
 *.sqlite3
 *.db
+data/
 
 # Build / logs
 *.log
