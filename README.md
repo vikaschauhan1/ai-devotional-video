@@ -30,10 +30,13 @@ plan in the project brief).
 # 1. Install python 3.12 into a project-local .venv (uv handles it)
 make setup
 
-# 2. Run backend (once Phase 5 lands)
+# 2. Install frontend deps (one-time)
+make frontend-install
+
+# 3. Run backend on http://127.0.0.1:8000  (Swagger at /docs)
 make backend
 
-# 3. Run frontend (once Phase 5 lands)
+# 4. In another terminal, run the frontend on http://127.0.0.1:3000
 make frontend
 ```
 
