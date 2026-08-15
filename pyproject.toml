@@ -1,0 +1,52 @@
+[project]
+name = "ai-devotional-video"
+version = "0.1.0"
+description = "Local-first AI pipeline for cinematic Hindi / Sanskrit devotional videos."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Apache-2.0" }
+authors = [{ name = "AI Devotional Video contributors" }]
+
+# Only pins that Phase 2 needs are listed. Heavy ML deps get added in the
+# phase that first imports them, so a fresh clone doesn't need to fetch
+# gigabytes of wheels before basic tooling works.
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.4",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "python-multipart>=0.0.9",
+    "httpx>=0.27",
+    "typer>=0.12",
+    "rich>=13.7",
+    "python-dotenv>=1.0",
+    "aiofiles>=24.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend", "agent", "workers", "pipeline", "models"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "N"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

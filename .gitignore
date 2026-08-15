@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.uv-cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+.turbo/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local data (kept as folders via .gitkeep, contents ignored)
+storage/uploads/*
+storage/audio/*
+storage/transcripts/*
+storage/references/*
+storage/scenes/*
+storage/generated_images/*
+storage/generated_videos/*
+storage/lipsync/*
+storage/final/*
+!storage/**/.gitkeep
+
+# Model weights and caches (never commit)
+models/**/weights/
+models/**/*.bin
+models/**/*.safetensors
+models/**/*.ckpt
+models/**/*.pt
+models/**/*.pth
+models/**/*.onnx
+models/**/*.gguf
+.cache/
+.hf-cache/
+
+# Databases
+*.sqlite
+*.sqlite3
+*.db
+
+# Build / logs
+*.log
+build/
