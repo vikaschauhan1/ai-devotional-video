@@ -1,9 +1,10 @@
 """Pipeline endpoints.
 
 Contracts live here so the frontend can be built in parallel. Phase 7
-implements audio upload + FFmpeg metadata extraction; the remaining
-lyrics / analyze / plan-scenes / generate endpoints stay as 501 stubs
-until the phases that implement them.
+implemented audio upload + FFmpeg metadata extraction; Phase 8 adds
+transcription via faster-whisper. The remaining lyrics / analyze /
+plan-scenes / generate endpoints stay as 501 stubs until the phases
+that implement them.
 """
 
 from __future__ import annotations
@@ -20,9 +21,14 @@ from backend.app.schemas import (
     AudioMetadataOut,
     AudioUploadResponse,
     Message,
+    TranscriptionRequest,
+    TranscriptionResponse,
+    TranscriptSegmentOut,
 )
 from backend.app.services.audio import save_upload
+from backend.app.services.transcription import transcribe_project
 from pipeline.audio_analysis import AudioAnalysisError, probe
+from pipeline.transcription import TranscriptionError
 
 router = APIRouter(prefix="/projects/{project_id}")
 log = logging.getLogger(__name__)
@@ -95,6 +101,51 @@ async def upload_audio(
 def upload_lyrics(project_id: str, db: Session = Depends(get_db)) -> Message:
     _require_project(db, project_id)
     raise _not_implemented("Lyrics upload")
+
+
+@router.post(
+    "/transcribe",
+    response_model=TranscriptionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def transcribe_endpoint(
+    project_id: str,
+    payload: TranscriptionRequest | None = None,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> TranscriptionResponse:
+    project = _require_project(db, project_id)
+    req = payload or TranscriptionRequest()
+    try:
+        audio_asset, transcript_asset, result = transcribe_project(
+            db=db,
+            settings=settings,
+            project=project,
+            language=req.language,
+            beam_size=req.beam_size,
+            vad_filter=req.vad_filter,
+        )
+    except TranscriptionError as exc:
+        log.warning("transcription failed for project=%s: %s", project.id, exc)
+        # 409 when preconditions aren't met (no audio), 500 for engine faults.
+        code = 409 if "no audio" in str(exc).lower() else 500
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+    return TranscriptionResponse(
+        project_id=project.id,
+        audio_asset_id=audio_asset.id,
+        transcript_asset_id=transcript_asset.id,
+        language=result.language,
+        language_probability=result.language_probability,
+        duration=result.duration,
+        model=result.model,
+        segments=[
+            TranscriptSegmentOut(start=s.start, end=s.end, text=s.text)
+            for s in result.segments
+        ],
+        text=result.text,
+        transcript_path=transcript_asset.path,
+    )
 
 
 @router.post("/analyze", response_model=Message)

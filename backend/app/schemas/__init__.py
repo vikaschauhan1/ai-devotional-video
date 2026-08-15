@@ -9,6 +9,11 @@ from backend.app.schemas.common import (
 from backend.app.schemas.job import JobRead
 from backend.app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
 from backend.app.schemas.scene import SceneRead
+from backend.app.schemas.transcription import (
+    TranscriptionRequest,
+    TranscriptionResponse,
+    TranscriptSegmentOut,
+)
 
 __all__ = [
     "AudioMetadataOut",
@@ -21,4 +26,7 @@ __all__ = [
     "ProjectRead",
     "ProjectUpdate",
     "SceneRead",
+    "TranscriptSegmentOut",
+    "TranscriptionRequest",
+    "TranscriptionResponse",
 ]
