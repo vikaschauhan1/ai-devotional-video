@@ -1,20 +1,31 @@
 """Pipeline endpoints.
 
-Contracts live here so the frontend can be built in parallel. The actual
-audio / lyrics / analyze / plan-scenes / generate implementations are
-wired up in later phases; until then the endpoints return HTTP 501.
+Contracts live here so the frontend can be built in parallel. Phase 7
+implements audio upload + FFmpeg metadata extraction; the remaining
+lyrics / analyze / plan-scenes / generate endpoints stay as 501 stubs
+until the phases that implement them.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+import logging
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import get_db
-from backend.app.db.models import Project
-from backend.app.schemas import Message
+from backend.app.core.settings import Settings, get_settings
+from backend.app.db.models import AssetKind, MediaAsset, Project
+from backend.app.schemas import (
+    AudioMetadataOut,
+    AudioUploadResponse,
+    Message,
+)
+from backend.app.services.audio import save_upload
+from pipeline.audio_analysis import AudioAnalysisError, probe
 
 router = APIRouter(prefix="/projects/{project_id}")
+log = logging.getLogger(__name__)
 
 
 def _require_project(db: Session, project_id: str) -> Project:
@@ -31,16 +42,53 @@ def _not_implemented(feature: str) -> HTTPException:
     )
 
 
-@router.post("/audio", response_model=Message)
+@router.post(
+    "/audio",
+    response_model=AudioUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def upload_audio(
     project_id: str,
-    file: UploadFile,
+    file: UploadFile = File(...),
     db: Session = Depends(get_db),
-) -> Message:
-    _require_project(db, project_id)
-    # File is intentionally not consumed here — real handler lands in Phase 7.
-    _ = file
-    raise _not_implemented("Audio upload")
+    settings: Settings = Depends(get_settings),
+) -> AudioUploadResponse:
+    project = _require_project(db, project_id)
+
+    stored = await save_upload(
+        settings=settings, project_id=project.id, upload=file
+    )
+
+    try:
+        meta = probe(stored.path)
+    except AudioAnalysisError as exc:
+        # File was invalid audio - clean up and 400 back.
+        stored.path.unlink(missing_ok=True)
+        log.warning("rejecting upload for project=%s: %s", project.id, exc)
+        raise HTTPException(status_code=400, detail=f"audio invalid: {exc}") from exc
+
+    asset = MediaAsset(
+        project_id=project.id,
+        kind=AssetKind.AUDIO,
+        path=str(stored.path),
+        original_filename=stored.original_filename,
+        mime_type=stored.mime_type,
+        size_bytes=stored.size_bytes,
+        meta=meta.to_dict(),
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+
+    return AudioUploadResponse(
+        asset_id=asset.id,
+        project_id=project.id,
+        path=str(stored.path),
+        original_filename=stored.original_filename,
+        mime_type=stored.mime_type,
+        size_bytes=stored.size_bytes,
+        metadata=AudioMetadataOut(**meta.to_dict()),
+    )
 
 
 @router.post("/lyrics", response_model=Message)

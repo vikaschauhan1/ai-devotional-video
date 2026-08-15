@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -12,10 +13,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-# Point the app at a temp SQLite file BEFORE the app imports settings.
-_TMP_DB = Path(tempfile.gettempdir()) / f"ai-dev-video-test-{os.getpid()}.sqlite"
-_TMP_DB.unlink(missing_ok=True)
+# Point the app at a temp SQLite file + a temp storage root BEFORE the
+# app imports settings. That way uploads, generated audio and any other
+# side-effects live under /tmp and cannot pollute the checkout.
+_TMP_ROOT = Path(tempfile.gettempdir()) / f"ai-dev-video-test-{os.getpid()}"
+_TMP_ROOT.mkdir(parents=True, exist_ok=True)
+_TMP_DB = _TMP_ROOT / "test.sqlite"
+_TMP_STORAGE = _TMP_ROOT / "storage"
+_TMP_STORAGE.mkdir(parents=True, exist_ok=True)
 os.environ["DATABASE_URL"] = f"sqlite:///{_TMP_DB}"
+os.environ["STORAGE_ROOT"] = str(_TMP_STORAGE)
 os.environ["APP_ENV"] = "test"
 
 from backend.app.core.settings import get_settings  # noqa: E402
@@ -39,7 +46,7 @@ def test_engine():
     Base.metadata.create_all(bind=engine)
     yield engine
     engine.dispose()
-    _TMP_DB.unlink(missing_ok=True)
+    shutil.rmtree(_TMP_ROOT, ignore_errors=True)
 
 
 @pytest.fixture()

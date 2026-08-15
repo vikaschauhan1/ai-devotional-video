@@ -1,5 +1,6 @@
 """Pydantic schemas exposed through the API."""
 
+from backend.app.schemas.audio import AudioMetadataOut, AudioUploadResponse
 from backend.app.schemas.common import (
     HealthResponse,
     JobStatusEnum,
@@ -10,6 +11,8 @@ from backend.app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdat
 from backend.app.schemas.scene import SceneRead
 
 __all__ = [
+    "AudioMetadataOut",
+    "AudioUploadResponse",
     "HealthResponse",
     "JobRead",
     "JobStatusEnum",
