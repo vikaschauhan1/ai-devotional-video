@@ -16,10 +16,13 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.deps import get_db
 from backend.app.core.settings import Settings, get_settings
-from backend.app.db.models import AssetKind, MediaAsset, Project
+from backend.app.db.models import AssetKind, MediaAsset, Project, Scene
 from backend.app.schemas import (
     AudioMetadataOut,
     AudioUploadResponse,
+    GeneratedImage,
+    GenerateImagesRequest,
+    GenerateImagesResponse,
     LyricsAnalysisResponse,
     LyricsUploadRequest,
     LyricsUploadResponse,
@@ -31,6 +34,10 @@ from backend.app.schemas import (
     TranscriptSegmentOut,
 )
 from backend.app.services.audio import save_upload
+from backend.app.services.images import (
+    ImageGenerationServiceError,
+    generate_project_images,
+)
 from backend.app.services.lyrics import (
     LyricsAnalysisError,
     analyze_lyrics,
@@ -41,6 +48,8 @@ from backend.app.services.scenes import (
     plan_project_scenes,
 )
 from backend.app.services.transcription import transcribe_project
+from models.image import get_image_engine
+from models.image.base import ImageGenerationEngine
 from models.llm import get_llm_engine
 from models.llm.base import LLMEngine
 from pipeline.audio_analysis import AudioAnalysisError, probe
@@ -236,6 +245,53 @@ async def plan_scenes(
         plan_asset_id=asset.id,
         plan_path=asset.path,
         scene_count=len(plan.scenes),
+    )
+
+
+@router.post(
+    "/generate-images",
+    response_model=GenerateImagesResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def generate_images(
+    project_id: str,
+    payload: GenerateImagesRequest | None = None,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    image_engine: ImageGenerationEngine = Depends(get_image_engine),
+) -> GenerateImagesResponse:
+    project = _require_project(db, project_id)
+    req = payload or GenerateImagesRequest()
+    try:
+        pairs = await generate_project_images(
+            db=db,
+            settings=settings,
+            project=project,
+            engine=image_engine,
+            force=req.force,
+        )
+    except ImageGenerationServiceError as exc:
+        log.warning("image generation failed project=%s: %s", project.id, exc)
+        code = 409 if "no scenes" in str(exc).lower() else 500
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+    total_scenes = (
+        db.query(Scene).filter(Scene.project_id == project.id).count()
+    )
+    return GenerateImagesResponse(
+        project_id=project.id,
+        engine=image_engine.name,
+        scenes_total=total_scenes,
+        scenes_generated=len(pairs),
+        images=[
+            GeneratedImage(
+                scene_index=scene.index,
+                image_path=asset.path,
+                size_bytes=asset.size_bytes or 0,
+                seed=int((asset.meta or {}).get("seed", 0)),
+            )
+            for scene, asset in pairs
+        ],
     )
 
 

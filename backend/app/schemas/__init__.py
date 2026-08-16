@@ -6,6 +6,11 @@ from backend.app.schemas.common import (
     JobStatusEnum,
     Message,
 )
+from backend.app.schemas.images import (
+    GeneratedImage,
+    GenerateImagesRequest,
+    GenerateImagesResponse,
+)
 from backend.app.schemas.job import JobRead
 from backend.app.schemas.lyrics import (
     LyricsAnalysis,
@@ -34,6 +39,9 @@ from backend.app.schemas.transcription import (
 __all__ = [
     "AudioMetadataOut",
     "AudioUploadResponse",
+    "GenerateImagesRequest",
+    "GenerateImagesResponse",
+    "GeneratedImage",
     "HealthResponse",
     "JobRead",
     "JobStatusEnum",
