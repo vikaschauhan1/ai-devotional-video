@@ -87,6 +87,27 @@ def _require_project(db: Session, project_id: str) -> Project:
     return project
 
 
+def _storage_url(settings: Settings, absolute_path: str) -> str:
+    """Turn an absolute storage path into a browser-relative URL.
+
+    The FastAPI app mounts settings.storage_root at ``/storage``, so any
+    file under STORAGE_ROOT can be served as ``/storage/<relative>``.
+    Returns an empty string for paths that are NOT under STORAGE_ROOT
+    (defence in depth — the frontend must never receive a link to a
+    file the user isn't entitled to see).
+    """
+    if not absolute_path:
+        return ""
+    try:
+        root = settings.storage_root.resolve()
+        p = type(root)(absolute_path).resolve()
+    except (OSError, ValueError):
+        return ""
+    if not p.is_relative_to(root):
+        return ""
+    return "/storage/" + str(p.relative_to(root)).replace("\\", "/")
+
+
 def _not_implemented(feature: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
@@ -415,6 +436,7 @@ async def generate(
         project_id=outcome.project_id,
         final_asset_id=outcome.final_asset_id,
         path=outcome.final_path,
+        url=_storage_url(settings, outcome.final_path),
         duration=outcome.duration,
         width=outcome.width,
         height=outcome.height,
@@ -462,6 +484,7 @@ def render_final(
         project_id=project.id,
         final_asset_id=asset.id,
         path=asset.path,
+        url=_storage_url(settings, asset.path),
         duration=float(result.duration),
         width=int(result.width),
         height=int(result.height),
@@ -474,7 +497,9 @@ def render_final(
 
 @router.get("/render", response_model=RenderFinalResponse)
 def render_status(
-    project_id: str, db: Session = Depends(get_db)
+    project_id: str,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> RenderFinalResponse:
     project = _require_project(db, project_id)
     latest = (
@@ -496,6 +521,7 @@ def render_status(
         project_id=project.id,
         final_asset_id=latest.id,
         path=latest.path,
+        url=_storage_url(settings, latest.path),
         duration=float(meta.get("duration", 0.0)),
         width=int(meta.get("width", 0)),
         height=int(meta.get("height", 0)),

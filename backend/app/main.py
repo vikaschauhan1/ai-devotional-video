@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from backend.app.api.routes import api_router
 from backend.app.core.logging import configure_logging
@@ -48,6 +49,17 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(api_router)
+
+    # Serve generated media so the browser can play/download it directly.
+    # Storage root is created by settings.ensure_dirs() in the lifespan
+    # hook; StaticFiles won't error out here because we haven't started
+    # serving requests yet.
+    settings.ensure_dirs()
+    app.mount(
+        "/storage",
+        StaticFiles(directory=str(settings.storage_root)),
+        name="storage",
+    )
     return app
 
 

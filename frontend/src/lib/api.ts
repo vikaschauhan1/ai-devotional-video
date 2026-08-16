@@ -1,5 +1,10 @@
 import type {
+  AudioUploadResponse,
+  FinalVideo,
+  GenerateRequest,
+  GenerateResponse,
   HealthResponse,
+  LyricsUploadResponse,
   Project,
   ProjectCreate,
 } from "./api-types";
@@ -16,21 +21,49 @@ async function request<T>(
     ...init,
     signal,
     headers: {
-      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(init.body instanceof FormData
+        ? {} // let the browser set multipart boundary
+        : { "Content-Type": "application/json" }),
       ...(init.headers ?? {}),
     },
     cache: "no-store",
   });
   if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(
-      `API ${res.status} ${res.statusText}: ${detail || path}`,
-    );
+    let detail = "";
+    try {
+      const body = await res.json();
+      detail =
+        typeof body.detail === "string"
+          ? body.detail
+          : JSON.stringify(body.detail ?? body);
+    } catch {
+      detail = await res.text().catch(() => "");
+    }
+    throw new ApiError(res.status, `API ${res.status} ${res.statusText}: ${detail || path}`, detail);
   }
   if (res.status === 204) {
     return undefined as unknown as T;
   }
   return (await res.json()) as T;
+}
+
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly rawDetail: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+/** Prepend the API base so an "/storage/..." path becomes a full URL. */
+export function absolutize(url: string): string {
+  if (!url) return url;
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  return `${API_BASE}${url}`;
 }
 
 export const api = {
@@ -39,6 +72,8 @@ export const api = {
     request<HealthResponse>("/api/health", {}, signal),
   listProjects: (signal?: AbortSignal) =>
     request<Project[]>("/api/projects", {}, signal),
+  getProject: (id: string, signal?: AbortSignal) =>
+    request<Project>(`/api/projects/${id}`, {}, signal),
   createProject: (payload: ProjectCreate, signal?: AbortSignal) =>
     request<Project>(
       "/api/projects",
@@ -51,4 +86,27 @@ export const api = {
       { method: "DELETE" },
       signal,
     ),
+  uploadAudio: (id: string, file: File, signal?: AbortSignal) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<AudioUploadResponse>(
+      `/api/projects/${id}/audio`,
+      { method: "POST", body: form },
+      signal,
+    );
+  },
+  uploadLyrics: (id: string, text: string, signal?: AbortSignal) =>
+    request<LyricsUploadResponse>(
+      `/api/projects/${id}/lyrics`,
+      { method: "POST", body: JSON.stringify({ text }) },
+      signal,
+    ),
+  generate: (id: string, payload: GenerateRequest, signal?: AbortSignal) =>
+    request<GenerateResponse>(
+      `/api/projects/${id}/generate`,
+      { method: "POST", body: JSON.stringify(payload) },
+      signal,
+    ),
+  getRender: (id: string, signal?: AbortSignal) =>
+    request<FinalVideo>(`/api/projects/${id}/render`, {}, signal),
 };

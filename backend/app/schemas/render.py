@@ -18,6 +18,7 @@ class RenderFinalResponse(BaseModel):
     project_id: str
     final_asset_id: str
     path: str
+    url: str = ""
     duration: float
     width: int
     height: int
