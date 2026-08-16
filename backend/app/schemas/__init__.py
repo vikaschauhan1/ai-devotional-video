@@ -35,13 +35,21 @@ from backend.app.schemas.transcription import (
     TranscriptionResponse,
     TranscriptSegmentOut,
 )
+from backend.app.schemas.videos import (
+    GeneratedVideo,
+    GenerateVideosRequest,
+    GenerateVideosResponse,
+)
 
 __all__ = [
     "AudioMetadataOut",
     "AudioUploadResponse",
     "GenerateImagesRequest",
     "GenerateImagesResponse",
+    "GenerateVideosRequest",
+    "GenerateVideosResponse",
     "GeneratedImage",
+    "GeneratedVideo",
     "HealthResponse",
     "JobRead",
     "JobStatusEnum",

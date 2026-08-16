@@ -21,8 +21,11 @@ from backend.app.schemas import (
     AudioMetadataOut,
     AudioUploadResponse,
     GeneratedImage,
+    GeneratedVideo,
     GenerateImagesRequest,
     GenerateImagesResponse,
+    GenerateVideosRequest,
+    GenerateVideosResponse,
     LyricsAnalysisResponse,
     LyricsUploadRequest,
     LyricsUploadResponse,
@@ -48,10 +51,16 @@ from backend.app.services.scenes import (
     plan_project_scenes,
 )
 from backend.app.services.transcription import transcribe_project
+from backend.app.services.videos import (
+    VideoGenerationServiceError,
+    generate_project_videos,
+)
 from models.image import get_image_engine
 from models.image.base import ImageGenerationEngine
 from models.llm import get_llm_engine
 from models.llm.base import LLMEngine
+from models.video import get_video_engine
+from models.video.base import VideoGenerationEngine
 from pipeline.audio_analysis import AudioAnalysisError, probe
 from pipeline.transcription import TranscriptionError
 
@@ -289,6 +298,56 @@ async def generate_images(
                 image_path=asset.path,
                 size_bytes=asset.size_bytes or 0,
                 seed=int((asset.meta or {}).get("seed", 0)),
+            )
+            for scene, asset in pairs
+        ],
+    )
+
+
+@router.post(
+    "/generate-videos",
+    response_model=GenerateVideosResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def generate_videos(
+    project_id: str,
+    payload: GenerateVideosRequest | None = None,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    video_engine: VideoGenerationEngine = Depends(get_video_engine),
+) -> GenerateVideosResponse:
+    project = _require_project(db, project_id)
+    req = payload or GenerateVideosRequest()
+    try:
+        pairs = await generate_project_videos(
+            db=db,
+            settings=settings,
+            project=project,
+            engine=video_engine,
+            force=req.force,
+            fps=req.fps,
+        )
+    except VideoGenerationServiceError as exc:
+        log.warning("video generation failed project=%s: %s", project.id, exc)
+        detail = str(exc).lower()
+        code = 409 if ("no scenes" in detail or "no image" in detail) else 500
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+    total_scenes = (
+        db.query(Scene).filter(Scene.project_id == project.id).count()
+    )
+    return GenerateVideosResponse(
+        project_id=project.id,
+        engine=video_engine.name,
+        scenes_total=total_scenes,
+        scenes_generated=len(pairs),
+        videos=[
+            GeneratedVideo(
+                scene_index=scene.index,
+                video_path=asset.path,
+                duration=float((asset.meta or {}).get("duration", 0.0)),
+                fps=int((asset.meta or {}).get("fps", 0)),
+                size_bytes=asset.size_bytes or 0,
             )
             for scene, asset in pairs
         ],
