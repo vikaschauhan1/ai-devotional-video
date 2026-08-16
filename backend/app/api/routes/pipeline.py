@@ -32,6 +32,8 @@ from backend.app.schemas import (
     Message,
     PlanScenesRequest,
     PlanScenesResponse,
+    RenderFinalRequest,
+    RenderFinalResponse,
     TranscriptionRequest,
     TranscriptionResponse,
     TranscriptSegmentOut,
@@ -45,6 +47,10 @@ from backend.app.services.lyrics import (
     LyricsAnalysisError,
     analyze_lyrics,
     save_lyrics,
+)
+from backend.app.services.render import (
+    CompositeServiceError,
+    render_project_final,
 )
 from backend.app.services.scenes import (
     ScenePlanServiceError,
@@ -360,7 +366,78 @@ def generate(project_id: str, db: Session = Depends(get_db)) -> Message:
     raise _not_implemented("End-to-end generation")
 
 
-@router.get("/render", response_model=Message)
-def render_status(project_id: str, db: Session = Depends(get_db)) -> Message:
-    _require_project(db, project_id)
-    raise _not_implemented("Render status")
+@router.post(
+    "/render",
+    response_model=RenderFinalResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def render_final(
+    project_id: str,
+    payload: RenderFinalRequest | None = None,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> RenderFinalResponse:
+    project = _require_project(db, project_id)
+    req = payload or RenderFinalRequest()
+    try:
+        asset, result = render_project_final(
+            db=db,
+            settings=settings,
+            project=project,
+            burn_subtitles=req.burn_subtitles,
+            fps=req.fps,
+            xfade_seconds=req.xfade_seconds,
+        )
+    except CompositeServiceError as exc:
+        log.warning("render failed project=%s: %s", project.id, exc)
+        detail = str(exc).lower()
+        code = 409 if ("no scenes" in detail or "no video" in detail) else 500
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+    meta = asset.meta or {}
+    return RenderFinalResponse(
+        project_id=project.id,
+        final_asset_id=asset.id,
+        path=asset.path,
+        duration=float(result.duration),
+        width=int(result.width),
+        height=int(result.height),
+        fps=int(result.fps),
+        size_bytes=asset.size_bytes or 0,
+        subtitles_burned=bool(meta.get("subtitles_burned")),
+        scene_count=int(meta.get("scene_count", 0)),
+    )
+
+
+@router.get("/render", response_model=RenderFinalResponse)
+def render_status(
+    project_id: str, db: Session = Depends(get_db)
+) -> RenderFinalResponse:
+    project = _require_project(db, project_id)
+    latest = (
+        db.query(MediaAsset)
+        .filter(
+            MediaAsset.project_id == project.id,
+            MediaAsset.kind == AssetKind.FINAL,
+        )
+        .order_by(MediaAsset.created_at.desc())
+        .first()
+    )
+    if latest is None:
+        raise HTTPException(
+            status_code=404,
+            detail="no final render yet — POST /render to create one",
+        )
+    meta = latest.meta or {}
+    return RenderFinalResponse(
+        project_id=project.id,
+        final_asset_id=latest.id,
+        path=latest.path,
+        duration=float(meta.get("duration", 0.0)),
+        width=int(meta.get("width", 0)),
+        height=int(meta.get("height", 0)),
+        fps=int(meta.get("fps", 0)),
+        size_bytes=latest.size_bytes or 0,
+        subtitles_burned=bool(meta.get("subtitles_burned")),
+        scene_count=int(meta.get("scene_count", 0)),
+    )
