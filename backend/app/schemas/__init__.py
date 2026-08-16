@@ -6,6 +6,17 @@ from backend.app.schemas.common import (
     JobStatusEnum,
     Message,
 )
+from backend.app.schemas.generate import (
+    AsyncGenerateResponse,
+    GenerateRequest,
+    GenerateResponse,
+    GenerationStepOut,
+)
+from backend.app.schemas.images import (
+    GeneratedImage,
+    GenerateImagesRequest,
+    GenerateImagesResponse,
+)
 from backend.app.schemas.job import JobRead
 from backend.app.schemas.lyrics import (
     LyricsAnalysis,
@@ -17,16 +28,40 @@ from backend.app.schemas.lyrics import (
     VisualIntensity,
 )
 from backend.app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
+from backend.app.schemas.references import ReferenceOut
+from backend.app.schemas.render import RenderFinalRequest, RenderFinalResponse
 from backend.app.schemas.scene import SceneRead
+from backend.app.schemas.scenes import (
+    PlanScenesRequest,
+    PlanScenesResponse,
+    SceneOut,
+    ScenePlan,
+    TransitionType,
+)
 from backend.app.schemas.transcription import (
     TranscriptionRequest,
     TranscriptionResponse,
     TranscriptSegmentOut,
 )
+from backend.app.schemas.videos import (
+    GeneratedVideo,
+    GenerateVideosRequest,
+    GenerateVideosResponse,
+)
 
 __all__ = [
     "AudioMetadataOut",
     "AudioUploadResponse",
+    "AsyncGenerateResponse",
+    "GenerateImagesRequest",
+    "GenerateImagesResponse",
+    "GenerateRequest",
+    "GenerateResponse",
+    "GenerateVideosRequest",
+    "GenerateVideosResponse",
+    "GeneratedImage",
+    "GeneratedVideo",
+    "GenerationStepOut",
     "HealthResponse",
     "JobRead",
     "JobStatusEnum",
@@ -36,13 +71,21 @@ __all__ = [
     "LyricsUploadRequest",
     "LyricsUploadResponse",
     "Message",
+    "PlanScenesRequest",
+    "PlanScenesResponse",
     "ProjectCreate",
     "ProjectRead",
     "ProjectUpdate",
+    "ReferenceOut",
+    "RenderFinalRequest",
+    "RenderFinalResponse",
+    "SceneOut",
+    "ScenePlan",
     "SceneRead",
     "SectionType",
     "TranscriptSegmentOut",
     "TranscriptionRequest",
     "TranscriptionResponse",
+    "TransitionType",
     "VisualIntensity",
 ]

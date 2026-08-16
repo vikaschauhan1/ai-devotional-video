@@ -24,6 +24,8 @@ dependencies = [
     "python-dotenv>=1.0",
     "aiofiles>=24.1",
     "faster-whisper>=1.0",
+    "piper-tts>=1.7",
+    "pillow>=10.4",
 ]
 
 [project.optional-dependencies]
@@ -48,6 +50,11 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "N"]
+
+[tool.ruff.lint.per-file-ignores]
+# Prompt templates contain long natural-language paragraphs; line length is
+# not a useful signal there and forced wrapping breaks readability.
+"agent/prompts.py" = ["E501"]
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI puts callable markers in argument defaults on purpose.
