@@ -23,6 +23,7 @@ dependencies = [
     "rich>=13.7",
     "python-dotenv>=1.0",
     "aiofiles>=24.1",
+    "faster-whisper>=1.0",
 ]
 
 [project.optional-dependencies]
