@@ -24,6 +24,8 @@ from backend.app.schemas import (
     LyricsUploadRequest,
     LyricsUploadResponse,
     Message,
+    PlanScenesRequest,
+    PlanScenesResponse,
     TranscriptionRequest,
     TranscriptionResponse,
     TranscriptSegmentOut,
@@ -33,6 +35,10 @@ from backend.app.services.lyrics import (
     LyricsAnalysisError,
     analyze_lyrics,
     save_lyrics,
+)
+from backend.app.services.scenes import (
+    ScenePlanServiceError,
+    plan_project_scenes,
 )
 from backend.app.services.transcription import transcribe_project
 from models.llm import get_llm_engine
@@ -197,10 +203,40 @@ async def analyze(
     )
 
 
-@router.post("/plan-scenes", response_model=Message)
-def plan_scenes(project_id: str, db: Session = Depends(get_db)) -> Message:
-    _require_project(db, project_id)
-    raise _not_implemented("Scene planning")
+@router.post("/plan-scenes", response_model=PlanScenesResponse, status_code=status.HTTP_201_CREATED)
+async def plan_scenes(
+    project_id: str,
+    payload: PlanScenesRequest | None = None,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    engine: LLMEngine = Depends(get_llm_engine),
+) -> PlanScenesResponse:
+    project = _require_project(db, project_id)
+    req = payload or PlanScenesRequest()
+    try:
+        plan, asset, _replaced = await plan_project_scenes(
+            db=db,
+            settings=settings,
+            project=project,
+            engine=engine,
+            style_preset_override=req.style_preset,
+            target_scene_count=req.target_scene_count,
+            reference_hints=req.reference_hints,
+        )
+    except ScenePlanServiceError as exc:
+        log.warning("scene planning failed project=%s: %s", project.id, exc)
+        code = 409 if "no lyrics analysis" in str(exc).lower() else 500
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+    return PlanScenesResponse(
+        project_id=project.id,
+        engine=engine.name,
+        model=settings.llm_model,
+        plan=plan,
+        plan_asset_id=asset.id,
+        plan_path=asset.path,
+        scene_count=len(plan.scenes),
+    )
 
 
 @router.post("/generate", response_model=Message)

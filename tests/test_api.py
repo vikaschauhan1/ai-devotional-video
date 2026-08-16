@@ -60,16 +60,16 @@ def test_project_create_validates_aspect_ratio(client):
 
 def test_pipeline_endpoints_return_501_but_not_before_project_check(client):
     # Nonexistent project -> 404 (not 501) — verify with an unimplemented endpoint
-    r = client.post("/api/projects/does-not-exist/plan-scenes")
+    r = client.post("/api/projects/does-not-exist/generate")
     assert r.status_code == 404
 
     # Real project -> 501 for still-unimplemented pipeline stages.
-    # /audio, /lyrics, /transcribe and /analyze are implemented in later
-    # phases and have their own tests.
+    # /audio, /lyrics, /transcribe, /analyze and /plan-scenes are implemented
+    # in later phases and have their own tests.
     r = client.post("/api/projects", json={"name": "t"})
     pid = r.json()["id"]
 
-    for path in ("plan-scenes", "generate"):
+    for path in ("generate",):
         r = client.post(f"/api/projects/{pid}/{path}")
         assert r.status_code == 501, f"{path}: {r.status_code}"
 

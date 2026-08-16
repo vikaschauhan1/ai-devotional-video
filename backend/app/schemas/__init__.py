@@ -18,6 +18,13 @@ from backend.app.schemas.lyrics import (
 )
 from backend.app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
 from backend.app.schemas.scene import SceneRead
+from backend.app.schemas.scenes import (
+    PlanScenesRequest,
+    PlanScenesResponse,
+    SceneOut,
+    ScenePlan,
+    TransitionType,
+)
 from backend.app.schemas.transcription import (
     TranscriptionRequest,
     TranscriptionResponse,
@@ -36,13 +43,18 @@ __all__ = [
     "LyricsUploadRequest",
     "LyricsUploadResponse",
     "Message",
+    "PlanScenesRequest",
+    "PlanScenesResponse",
     "ProjectCreate",
     "ProjectRead",
     "ProjectUpdate",
+    "SceneOut",
+    "ScenePlan",
     "SceneRead",
     "SectionType",
     "TranscriptSegmentOut",
     "TranscriptionRequest",
     "TranscriptionResponse",
+    "TransitionType",
     "VisualIntensity",
 ]
