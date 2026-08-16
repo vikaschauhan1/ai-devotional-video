@@ -1,15 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, absolutize, api } from "@/lib/api";
 import {
   ALL_PIPELINE_STAGES,
   STYLE_PRESETS,
   type AspectRatio,
   type FinalVideo,
-  type GenerateResponse,
   type GenerationStep,
   type HealthResponse,
+  type Job,
   type PipelineStage,
   type Project,
 } from "@/lib/api-types";
@@ -28,13 +28,17 @@ const STAGE_LABEL: Record<PipelineStage, string> = {
 interface ActiveGeneration {
   status: "idle" | "running" | "done" | "failed";
   progress: GenerationStep[];
+  jobStatus: string | null;
+  message: string | null;
   error: string | null;
-  result: GenerateResponse | null;
+  result: FinalVideo | null;
 }
 
 const IDLE_GEN: ActiveGeneration = {
   status: "idle",
   progress: [],
+  jobStatus: null,
+  message: null,
   error: null,
   result: null,
 };
@@ -70,6 +74,7 @@ export default function HomePage() {
 
   // ── Generation state ──────────────────────────────────
   const [runTranscription, setRunTranscription] = useState(false);
+  const pollingRef = useRef<{ abort: () => void } | null>(null);
   const [burnSubs, setBurnSubs] = useState(true);
   const [targetScenes, setTargetScenes] = useState(6);
   const [gen, setGen] = useState<ActiveGeneration>(IDLE_GEN);
@@ -182,22 +187,97 @@ export default function HomePage() {
 
   async function onGenerate() {
     if (!selectedProject) return;
-    setGen({ status: "running", progress: [], error: null, result: null });
+    // Capture the id so TS narrowing survives the async loop closures.
+    const projectId = selectedProject.id;
+    // Stop any prior polling loop.
+    pollingRef.current?.abort();
+    setGen({
+      status: "running",
+      progress: [],
+      jobStatus: "QUEUED",
+      message: "queueing…",
+      error: null,
+      result: null,
+    });
+    let cancelled = false;
+    const ctrl = new AbortController();
+    pollingRef.current = {
+      abort: () => {
+        cancelled = true;
+        ctrl.abort();
+      },
+    };
     try {
-      const res = await api.generate(selectedProject.id, {
-        run_transcription: runTranscription,
-        target_scene_count: targetScenes,
-        style_preset: style || null,
-        burn_subtitles: burnSubs,
-        fps: 24,
-      });
-      setGen({
-        status: "done",
-        progress: res.progress,
-        error: null,
-        result: res,
-      });
-      setExistingFinal(res);
+      const queued = await api.generateAsync(
+        projectId,
+        {
+          run_transcription: runTranscription,
+          target_scene_count: targetScenes,
+          style_preset: style || null,
+          burn_subtitles: burnSubs,
+          fps: 24,
+        },
+        ctrl.signal,
+      );
+      // Poll the job until terminal state.
+      while (!cancelled) {
+        await new Promise((r) => setTimeout(r, 800));
+        if (cancelled) return;
+        let job: Job;
+        try {
+          job = await api.getJob(queued.job_id, ctrl.signal);
+        } catch (err) {
+          if (
+            err instanceof DOMException &&
+            err.name === "AbortError"
+          ) {
+            return;
+          }
+          throw err;
+        }
+        setGen((prev) => ({
+          ...prev,
+          progress: job.result?.stages ?? prev.progress,
+          jobStatus: job.status,
+          message: job.message,
+        }));
+        if (job.status === "COMPLETED") {
+          const final = job.result?.final ?? null;
+          setGen({
+            status: "done",
+            progress: job.result?.stages ?? [],
+            jobStatus: job.status,
+            message: job.message,
+            error: null,
+            result: final,
+          });
+          if (final) setExistingFinal(final);
+          return;
+        }
+        if (job.status === "FAILED") {
+          const failedStage = job.result?.failed_stage ?? "unknown";
+          setGen({
+            status: "failed",
+            progress: job.result?.stages ?? [],
+            jobStatus: job.status,
+            message: job.message,
+            error: `${failedStage}: ${job.result?.failure_reason ?? job.error ?? "unknown error"}`,
+            result: null,
+          });
+          return;
+        }
+        if (job.status === "CANCELLED") {
+          setGen({
+            status: "failed",
+            progress: job.result?.stages ?? [],
+            jobStatus: job.status,
+            message: job.message,
+            error: "cancelled",
+            result: null,
+          });
+          return;
+        }
+      }
     } catch (err) {
       let stageInfo = "";
       if (err instanceof ApiError) {
@@ -213,12 +293,22 @@ export default function HomePage() {
       setGen({
         status: "failed",
         progress: [],
+        jobStatus: null,
+        message: null,
         error:
           (err instanceof Error ? err.message : String(err)) + stageInfo,
         result: null,
       });
     }
   }
+
+  // Abort any active polling when the component unmounts or the
+  // selected project changes.
+  useEffect(() => {
+    return () => {
+      pollingRef.current?.abort();
+    };
+  }, []);
 
   async function onDelete(id: string) {
     if (!confirm("Delete this project?")) return;
@@ -536,7 +626,7 @@ function ProjectWorkspace(props: {
   } = props;
 
   const busy = gen.status === "running";
-  const finalToShow = gen.result ?? existingFinal;
+  const finalToShow: FinalVideo | null = gen.result ?? existingFinal;
 
   return (
     <>
@@ -670,7 +760,11 @@ function ProjectWorkspace(props: {
             disabled={busy}
             className="px-4 py-2 rounded bg-orange-600 text-white disabled:opacity-50"
           >
-            {busy ? "Generating…" : "GENERATE VIDEO"}
+            {busy
+              ? gen.message
+                ? `Generating (${gen.jobStatus?.toLowerCase() ?? "…"})`
+                : "Generating…"
+              : "GENERATE VIDEO"}
           </button>
           {gen.status === "failed" && (
             <span className="text-sm text-red-500">{gen.error}</span>

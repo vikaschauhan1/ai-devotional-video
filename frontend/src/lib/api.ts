@@ -1,9 +1,11 @@
 import type {
+  AsyncGenerateResponse,
   AudioUploadResponse,
   FinalVideo,
   GenerateRequest,
   GenerateResponse,
   HealthResponse,
+  Job,
   LyricsUploadResponse,
   Project,
   ProjectCreate,
@@ -105,6 +107,24 @@ export const api = {
     request<GenerateResponse>(
       `/api/projects/${id}/generate`,
       { method: "POST", body: JSON.stringify(payload) },
+      signal,
+    ),
+  generateAsync: (
+    id: string,
+    payload: GenerateRequest,
+    signal?: AbortSignal,
+  ) =>
+    request<AsyncGenerateResponse>(
+      `/api/projects/${id}/generate-async`,
+      { method: "POST", body: JSON.stringify(payload) },
+      signal,
+    ),
+  getJob: (jobId: string, signal?: AbortSignal) =>
+    request<Job>(`/api/jobs/${jobId}`, {}, signal),
+  cancelJob: (jobId: string, signal?: AbortSignal) =>
+    request<{ message: string }>(
+      `/api/jobs/${jobId}/cancel`,
+      { method: "POST" },
       signal,
     ),
   getRender: (id: string, signal?: AbortSignal) =>

@@ -94,6 +94,50 @@ export interface GenerateRequest {
   xfade_seconds?: number;
 }
 
+/** Returned by POST /generate-async. */
+export interface AsyncGenerateResponse {
+  project_id: string;
+  job_id: string;
+  status: string;
+}
+
+/** Coarse Job state as persisted server-side. */
+export type JobStatusValue =
+  | "QUEUED"
+  | "ANALYZING"
+  | "PLANNING"
+  | "GENERATING_IMAGES"
+  | "GENERATING_VIDEO"
+  | "LIP_SYNC"
+  | "COMPOSITING"
+  | "COMPLETED"
+  | "FAILED"
+  | "CANCELLED";
+
+/** Body persisted inside Job.result while a job runs. */
+export interface JobResultBody {
+  stages?: GenerationStep[];
+  params?: unknown;
+  final?: FinalVideo;
+  elapsed_seconds?: number;
+  failed_stage?: string;
+  failure_reason?: string;
+}
+
+/** Full JobRead payload as returned by GET /api/jobs/{id}. */
+export interface Job {
+  id: string;
+  project_id: string;
+  kind: string;
+  status: JobStatusValue;
+  progress: number;
+  message: string | null;
+  error: string | null;
+  result: JobResultBody | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** Names of the 14 style presets recognised by agent/prompts.py. */
 export const STYLE_PRESETS = [
   "shiva-himalayan",

@@ -10,15 +10,16 @@ frontend can display a step-by-step timeline. Failures short-circuit
 and surface as a domain error; the caller decides how to expose them
 (the API turns them into 4xx / 5xx per the shared error convention).
 
-This service is intentionally synchronous. Phase 17 (job queue) will
-move the same call chain into a background worker with WebSocket
-progress; the code here is written so ``progress`` events are easy to
-stream in the future.
+Phase 17 wraps this in a background asyncio job (see
+``backend/app/services/jobs.py``). The ``progress_callback`` argument
+lets the job runner persist per-stage progress incrementally without
+this module needing to know anything about the DB Job table.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
@@ -70,7 +71,7 @@ class GenerationError(RuntimeError):
 @dataclass(slots=True)
 class GenerationStep:
     stage: str
-    status: str  # "ok" | "skipped" | "failed"
+    status: str  # "ok" | "skipped" | "failed" | "running"
     detail: str = ""
 
 
@@ -87,6 +88,29 @@ class GenerationOutcome:
     subtitles_burned: bool
     scene_count: int
     progress: list[GenerationStep] = field(default_factory=list)
+
+
+# Order of pipeline stages — used to compute ``progress`` as a float.
+_STAGES: tuple[str, ...] = (
+    "transcribe",
+    "analyze",
+    "plan-scenes",
+    "generate-images",
+    "generate-videos",
+    "render",
+)
+
+
+ProgressCallback = Callable[[GenerationStep], Awaitable[None]]
+
+
+async def _report(cb: ProgressCallback | None, step: GenerationStep) -> None:
+    if cb is None:
+        return
+    try:
+        await cb(step)
+    except Exception:  # noqa: BLE001 - progress errors must not kill the job
+        log.exception("progress callback raised (non-fatal)")
 
 
 def _has_audio(db: Session, project_id: str) -> bool:
@@ -130,18 +154,19 @@ async def generate_project_end_to_end(
     burn_subtitles: bool,
     fps: int,
     xfade_seconds: float,
+    progress_callback: ProgressCallback | None = None,
 ) -> GenerationOutcome:
     """Run every pipeline stage. Raises ``GenerationError`` on the first failure.
 
-    Preconditions on the caller side:
-    * Audio uploaded via ``POST /audio`` — required.
-    * Lyrics uploaded via ``POST /lyrics`` — required.
-
-    Transcription is optional. It's still valuable because scene planning
-    uses it for timing, but a project with rich lyrics text and known
-    audio duration can plan scenes without it.
+    ``progress_callback`` is invoked after each stage completes with the
+    ``GenerationStep`` that summarises that stage. Errors raised from the
+    callback are logged but never propagated to the caller.
     """
     progress: list[GenerationStep] = []
+
+    async def _log_step(step: GenerationStep) -> None:
+        progress.append(step)
+        await _report(progress_callback, step)
 
     if not _has_audio(db, project.id):
         raise GenerationError(
@@ -163,17 +188,20 @@ async def generate_project_end_to_end(
                 beam_size=5,
                 vad_filter=True,
             )
-            progress.append(GenerationStep("transcribe", "ok"))
+            await _log_step(GenerationStep("transcribe", "ok"))
         except TranscriptionError as exc:
-            # Transcription is best-effort: log, mark skipped, continue.
             log.warning("transcription skipped: %s", exc)
-            progress.append(GenerationStep("transcribe", "skipped", str(exc)))
+            await _log_step(
+                GenerationStep("transcribe", "skipped", str(exc))
+            )
     else:
-        progress.append(
+        await _log_step(
             GenerationStep(
                 "transcribe",
                 "skipped",
-                "not requested" if not run_transcription else "already present",
+                "not requested"
+                if not run_transcription
+                else "already present",
             )
         )
 
@@ -182,7 +210,7 @@ async def generate_project_end_to_end(
         analysis, _ = await analyze_lyrics(
             db=db, settings=settings, project=project, engine=llm_engine
         )
-        progress.append(
+        await _log_step(
             GenerationStep(
                 "analyze",
                 "ok",
@@ -203,7 +231,7 @@ async def generate_project_end_to_end(
             target_scene_count=target_scene_count,
             reference_hints=None,
         )
-        progress.append(
+        await _log_step(
             GenerationStep(
                 "plan-scenes",
                 "ok",
@@ -220,9 +248,9 @@ async def generate_project_end_to_end(
             settings=settings,
             project=project,
             engine=image_engine,
-            force=True,  # re-plan always yields fresh scenes
+            force=True,
         )
-        progress.append(
+        await _log_step(
             GenerationStep(
                 "generate-images",
                 "ok",
@@ -242,7 +270,7 @@ async def generate_project_end_to_end(
             force=True,
             fps=fps,
         )
-        progress.append(
+        await _log_step(
             GenerationStep(
                 "generate-videos",
                 "ok",
@@ -262,7 +290,7 @@ async def generate_project_end_to_end(
             fps=fps,
             xfade_seconds=xfade_seconds,
         )
-        progress.append(
+        await _log_step(
             GenerationStep(
                 "render",
                 "ok",
@@ -286,3 +314,12 @@ async def generate_project_end_to_end(
         scene_count=int(meta.get("scene_count", 0)),
         progress=progress,
     )
+
+
+def stage_to_progress(stage: str) -> float:
+    """Rough 0..1 progress for a given stage name (frontend cosmetic)."""
+    try:
+        idx = _STAGES.index(stage)
+    except ValueError:
+        return 0.0
+    return (idx + 1) / len(_STAGES)

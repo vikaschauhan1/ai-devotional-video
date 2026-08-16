@@ -7,6 +7,7 @@ from backend.app.schemas.common import (
     Message,
 )
 from backend.app.schemas.generate import (
+    AsyncGenerateResponse,
     GenerateRequest,
     GenerateResponse,
     GenerationStepOut,
@@ -50,6 +51,7 @@ from backend.app.schemas.videos import (
 __all__ = [
     "AudioMetadataOut",
     "AudioUploadResponse",
+    "AsyncGenerateResponse",
     "GenerateImagesRequest",
     "GenerateImagesResponse",
     "GenerateRequest",

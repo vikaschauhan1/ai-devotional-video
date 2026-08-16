@@ -38,3 +38,11 @@ class GenerateResponse(BaseModel):
     subtitles_burned: bool
     scene_count: int
     progress: list[GenerationStepOut]
+
+
+class AsyncGenerateResponse(BaseModel):
+    """Returned by POST /generate-async immediately after queueing."""
+
+    project_id: str
+    job_id: str
+    status: str

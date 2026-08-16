@@ -18,6 +18,7 @@ from backend.app.api.deps import get_db
 from backend.app.core.settings import Settings, get_settings
 from backend.app.db.models import AssetKind, MediaAsset, Project, Scene
 from backend.app.schemas import (
+    AsyncGenerateResponse,
     AudioMetadataOut,
     AudioUploadResponse,
     GeneratedImage,
@@ -43,12 +44,14 @@ from backend.app.schemas import (
 from backend.app.services.audio import save_upload
 from backend.app.services.generate import (
     GenerationError,
+    _has_audio,
     generate_project_end_to_end,
 )
 from backend.app.services.images import (
     ImageGenerationServiceError,
     generate_project_images,
 )
+from backend.app.services.jobs import kick_off_generate_job
 from backend.app.services.lyrics import (
     LyricsAnalysisError,
     analyze_lyrics,
@@ -448,6 +451,63 @@ async def generate(
             GenerationStepOut(stage=p.stage, status=p.status, detail=p.detail)
             for p in outcome.progress
         ],
+    )
+
+
+@router.post(
+    "/generate-async",
+    response_model=AsyncGenerateResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_async(
+    project_id: str,
+    payload: GenerateRequest | None = None,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    llm_engine: LLMEngine = Depends(get_llm_engine),
+    image_engine: ImageGenerationEngine = Depends(get_image_engine),
+    video_engine: VideoGenerationEngine = Depends(get_video_engine),
+) -> AsyncGenerateResponse:
+    """Queue the whole pipeline as a background job.
+
+    Returns 202 with a ``job_id`` immediately. Poll
+    ``GET /api/jobs/{job_id}`` for progress and the final URL.
+    """
+    project = _require_project(db, project_id)
+
+    # Precheck synchronously so the client learns about missing audio /
+    # lyrics right away rather than paying the async round-trip first.
+    if not _has_audio(db, project.id):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "stage": "precheck",
+                "message": "no audio uploaded — POST /audio first",
+            },
+        )
+    if not (project.lyrics and project.lyrics.strip()):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "stage": "precheck",
+                "message": "no lyrics uploaded — POST /lyrics first",
+            },
+        )
+
+    req = payload or GenerateRequest()
+    job = kick_off_generate_job(
+        db=db,
+        settings=settings,
+        project=project,
+        params=req.model_dump(),
+        llm_engine=llm_engine,
+        image_engine=image_engine,
+        video_engine=video_engine,
+    )
+    return AsyncGenerateResponse(
+        project_id=project.id,
+        job_id=job.id,
+        status=job.status.value,
     )
 
 
