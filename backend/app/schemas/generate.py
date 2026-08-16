@@ -15,6 +15,10 @@ class GenerateRequest(BaseModel):
     burn_subtitles: bool = False
     fps: int = Field(default=24, ge=12, le=60)
     xfade_seconds: float = Field(default=0.6, ge=0.0, le=3.0)
+    subtitle_font_size: int = Field(default=32, ge=8, le=128)
+    subtitle_font_name: str = Field(default="Noto Sans Devanagari", max_length=64)
+    subtitle_alignment: int = Field(default=2)
+    subtitle_margin_v: int = Field(default=60, ge=0, le=500)
 
 
 class GenerationStepOut(BaseModel):

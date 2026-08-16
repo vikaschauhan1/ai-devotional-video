@@ -226,6 +226,11 @@ def composite(
     xfade_seconds: float = 0.6,
     subtitle_segments: list[dict] | None = None,
     subtitle_font_size: int = 32,
+    subtitle_font_name: str = "Noto Sans Devanagari",
+    subtitle_alignment: int = 2,  # ASS alignment: 2=bottom-centre, 8=top-centre
+    subtitle_margin_v: int = 60,
+    subtitle_outline: int = 2,
+    subtitle_shadow: int = 1,
     timeout_seconds: float = 600.0,
 ) -> CompositionResult:
     """Concatenate ``clips`` with transitions and mux ``audio_path``.
@@ -257,10 +262,13 @@ def composite(
     # Add subtitles as a chained filter on the concatenated video label.
     if subs_path is not None:
         subs_arg = str(subs_path).replace(":", r"\:")
+        # Sanitise font name so it can't break out of the ASS style string.
+        safe_font = subtitle_font_name.replace(",", " ").replace("'", "")
         style = (
-            f"FontName=Noto Sans Devanagari,FontSize={subtitle_font_size},"
+            f"FontName={safe_font},FontSize={subtitle_font_size},"
             "PrimaryColour=&H00FFFFFF,OutlineColour=&H80000000,"
-            "Outline=2,Shadow=1,Alignment=2,MarginV=60"
+            f"Outline={subtitle_outline},Shadow={subtitle_shadow},"
+            f"Alignment={subtitle_alignment},MarginV={subtitle_margin_v}"
         )
         # Wrap label with subtitles filter; xfade left us at ``video_label``
         # which is like "[vx3]". Strip brackets to reuse it as filter input.

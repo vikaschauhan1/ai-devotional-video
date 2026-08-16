@@ -516,6 +516,10 @@ async def generate(
             burn_subtitles=req.burn_subtitles,
             fps=req.fps,
             xfade_seconds=req.xfade_seconds,
+            subtitle_font_size=req.subtitle_font_size,
+            subtitle_font_name=req.subtitle_font_name,
+            subtitle_alignment=req.subtitle_alignment,
+            subtitle_margin_v=req.subtitle_margin_v,
         )
     except GenerationError as exc:
         log.warning(
@@ -627,6 +631,10 @@ def render_final(
             burn_subtitles=req.burn_subtitles,
             fps=req.fps,
             xfade_seconds=req.xfade_seconds,
+            subtitle_font_size=req.subtitle_font_size,
+            subtitle_font_name=req.subtitle_font_name,
+            subtitle_alignment=req.subtitle_alignment,
+            subtitle_margin_v=req.subtitle_margin_v,
         )
     except CompositeServiceError as exc:
         log.warning("render failed project=%s: %s", project.id, exc)

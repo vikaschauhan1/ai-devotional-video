@@ -144,6 +144,12 @@ async def _run_generate_job(
                 burn_subtitles=bool(params.get("burn_subtitles", False)),
                 fps=int(params.get("fps", 24)),
                 xfade_seconds=float(params.get("xfade_seconds", 0.6)),
+                subtitle_font_size=int(params.get("subtitle_font_size", 32)),
+                subtitle_font_name=str(
+                    params.get("subtitle_font_name") or "Noto Sans Devanagari"
+                ),
+                subtitle_alignment=int(params.get("subtitle_alignment", 2)),
+                subtitle_margin_v=int(params.get("subtitle_margin_v", 60)),
                 progress_callback=_on_step,
             )
         except GenerationError as exc:

@@ -154,6 +154,10 @@ async def generate_project_end_to_end(
     burn_subtitles: bool,
     fps: int,
     xfade_seconds: float,
+    subtitle_font_size: int = 32,
+    subtitle_font_name: str = "Noto Sans Devanagari",
+    subtitle_alignment: int = 2,
+    subtitle_margin_v: int = 60,
     progress_callback: ProgressCallback | None = None,
 ) -> GenerationOutcome:
     """Run every pipeline stage. Raises ``GenerationError`` on the first failure.
@@ -289,6 +293,10 @@ async def generate_project_end_to_end(
             burn_subtitles=burn_subtitles,
             fps=fps,
             xfade_seconds=xfade_seconds,
+            subtitle_font_size=subtitle_font_size,
+            subtitle_font_name=subtitle_font_name,
+            subtitle_alignment=subtitle_alignment,
+            subtitle_margin_v=subtitle_margin_v,
         )
         await _log_step(
             GenerationStep(
