@@ -6,6 +6,11 @@ from backend.app.schemas.common import (
     JobStatusEnum,
     Message,
 )
+from backend.app.schemas.generate import (
+    GenerateRequest,
+    GenerateResponse,
+    GenerationStepOut,
+)
 from backend.app.schemas.images import (
     GeneratedImage,
     GenerateImagesRequest,
@@ -47,10 +52,13 @@ __all__ = [
     "AudioUploadResponse",
     "GenerateImagesRequest",
     "GenerateImagesResponse",
+    "GenerateRequest",
+    "GenerateResponse",
     "GenerateVideosRequest",
     "GenerateVideosResponse",
     "GeneratedImage",
     "GeneratedVideo",
+    "GenerationStepOut",
     "HealthResponse",
     "JobRead",
     "JobStatusEnum",

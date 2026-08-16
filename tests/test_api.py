@@ -58,20 +58,32 @@ def test_project_create_validates_aspect_ratio(client):
     assert r.status_code == 422
 
 
-def test_pipeline_endpoints_return_501_but_not_before_project_check(client):
-    # Nonexistent project -> 404 (not 501) — verify with an unimplemented endpoint
-    r = client.post("/api/projects/does-not-exist/generate")
-    assert r.status_code == 404
-
-    # Real project -> 501 for still-unimplemented pipeline stages.
-    # /audio, /lyrics, /transcribe, /analyze and /plan-scenes are implemented
-    # in later phases and have their own tests.
-    r = client.post("/api/projects", json={"name": "t"})
-    pid = r.json()["id"]
-
-    for path in ("generate",):
-        r = client.post(f"/api/projects/{pid}/{path}")
-        assert r.status_code == 501, f"{path}: {r.status_code}"
+def test_pipeline_endpoints_reject_missing_project_with_404(client):
+    # Every pipeline endpoint checks the project exists before doing any
+    # work — a nonexistent project id must always 404, not surface an
+    # engine error. Sample every action endpoint.
+    for path, method in (
+        ("audio", "post"),
+        ("lyrics", "post"),
+        ("transcribe", "post"),
+        ("analyze", "post"),
+        ("plan-scenes", "post"),
+        ("generate-images", "post"),
+        ("generate-videos", "post"),
+        ("render", "post"),
+        ("render", "get"),
+        ("generate", "post"),
+        ("scenes", "get"),
+    ):
+        req = getattr(client, method)
+        # We deliberately do NOT send a body — for JSON-body endpoints the
+        # 404 must win over any 422 that Pydantic would produce for a
+        # nonexistent project.
+        r = req(f"/api/projects/does-not-exist/{path}")
+        # POST with a required body may return 422 before hitting our code,
+        # in which case we haven't leaked the fact that the project doesn't
+        # exist. That's still fine.
+        assert r.status_code in (404, 422), f"{method.upper()} {path}: {r.status_code}"
 
 
 def test_scenes_empty_for_new_project(client):

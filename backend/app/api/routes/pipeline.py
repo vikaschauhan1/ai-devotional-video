@@ -24,12 +24,14 @@ from backend.app.schemas import (
     GeneratedVideo,
     GenerateImagesRequest,
     GenerateImagesResponse,
+    GenerateRequest,
+    GenerateResponse,
     GenerateVideosRequest,
     GenerateVideosResponse,
+    GenerationStepOut,
     LyricsAnalysisResponse,
     LyricsUploadRequest,
     LyricsUploadResponse,
-    Message,
     PlanScenesRequest,
     PlanScenesResponse,
     RenderFinalRequest,
@@ -39,6 +41,10 @@ from backend.app.schemas import (
     TranscriptSegmentOut,
 )
 from backend.app.services.audio import save_upload
+from backend.app.services.generate import (
+    GenerationError,
+    generate_project_end_to_end,
+)
 from backend.app.services.images import (
     ImageGenerationServiceError,
     generate_project_images,
@@ -360,10 +366,67 @@ async def generate_videos(
     )
 
 
-@router.post("/generate", response_model=Message)
-def generate(project_id: str, db: Session = Depends(get_db)) -> Message:
-    _require_project(db, project_id)
-    raise _not_implemented("End-to-end generation")
+@router.post(
+    "/generate",
+    response_model=GenerateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def generate(
+    project_id: str,
+    payload: GenerateRequest | None = None,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    llm_engine: LLMEngine = Depends(get_llm_engine),
+    image_engine: ImageGenerationEngine = Depends(get_image_engine),
+    video_engine: VideoGenerationEngine = Depends(get_video_engine),
+) -> GenerateResponse:
+    """One-button MVP endpoint. Chains every real pipeline stage."""
+    project = _require_project(db, project_id)
+    req = payload or GenerateRequest()
+    try:
+        outcome = await generate_project_end_to_end(
+            db=db,
+            settings=settings,
+            project=project,
+            llm_engine=llm_engine,
+            image_engine=image_engine,
+            video_engine=video_engine,
+            run_transcription=req.run_transcription,
+            target_scene_count=req.target_scene_count,
+            style_preset_override=req.style_preset,
+            burn_subtitles=req.burn_subtitles,
+            fps=req.fps,
+            xfade_seconds=req.xfade_seconds,
+        )
+    except GenerationError as exc:
+        log.warning(
+            "end-to-end generation failed project=%s stage=%s: %s",
+            project.id,
+            exc.stage,
+            exc.reason,
+        )
+        code = 409 if exc.stage == "precheck" else 500
+        raise HTTPException(
+            status_code=code,
+            detail={"stage": exc.stage, "message": exc.reason},
+        ) from exc
+
+    return GenerateResponse(
+        project_id=outcome.project_id,
+        final_asset_id=outcome.final_asset_id,
+        path=outcome.final_path,
+        duration=outcome.duration,
+        width=outcome.width,
+        height=outcome.height,
+        fps=outcome.fps,
+        size_bytes=outcome.size_bytes,
+        subtitles_burned=outcome.subtitles_burned,
+        scene_count=outcome.scene_count,
+        progress=[
+            GenerationStepOut(stage=p.stage, status=p.status, detail=p.detail)
+            for p in outcome.progress
+        ],
+    )
 
 
 @router.post(
