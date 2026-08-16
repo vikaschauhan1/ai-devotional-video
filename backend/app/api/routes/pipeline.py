@@ -10,6 +10,7 @@ endpoints stay as 501 stubs until the phases that implement them.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
@@ -35,6 +36,7 @@ from backend.app.schemas import (
     LyricsUploadResponse,
     PlanScenesRequest,
     PlanScenesResponse,
+    ReferenceOut,
     RenderFinalRequest,
     RenderFinalResponse,
     TranscriptionRequest,
@@ -179,6 +181,99 @@ def upload_lyrics(
         project_id=project.id,
         lyrics_length=len(project.lyrics or ""),
     )
+
+
+@router.post(
+    "/references",
+    response_model=ReferenceOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_reference(
+    project_id: str,
+    file: UploadFile = File(...),
+    label: str | None = None,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> ReferenceOut:
+    from backend.app.services.references import save_reference
+
+    project = _require_project(db, project_id)
+    stored = await save_reference(
+        settings=settings, project_id=project.id, upload=file, label=label
+    )
+    asset = MediaAsset(
+        project_id=project.id,
+        kind=AssetKind.REFERENCE,
+        path=str(stored.path),
+        original_filename=stored.original_filename,
+        mime_type=stored.mime_type,
+        size_bytes=stored.size_bytes,
+        meta={"label": label} if label else None,
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    return ReferenceOut(
+        id=asset.id,
+        project_id=project.id,
+        path=asset.path,
+        url=_storage_url(settings, asset.path),
+        label=label,
+        original_filename=asset.original_filename,
+        mime_type=asset.mime_type,
+        size_bytes=asset.size_bytes,
+        created_at=asset.created_at,
+    )
+
+
+@router.get("/references", response_model=list[ReferenceOut])
+def list_references(
+    project_id: str,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> list[ReferenceOut]:
+    _require_project(db, project_id)
+    rows = (
+        db.query(MediaAsset)
+        .filter(
+            MediaAsset.project_id == project_id,
+            MediaAsset.kind == AssetKind.REFERENCE,
+        )
+        .order_by(MediaAsset.created_at.desc())
+        .all()
+    )
+    return [
+        ReferenceOut(
+            id=a.id,
+            project_id=project_id,
+            path=a.path,
+            url=_storage_url(settings, a.path),
+            label=(a.meta or {}).get("label"),
+            original_filename=a.original_filename,
+            mime_type=a.mime_type,
+            size_bytes=a.size_bytes,
+            created_at=a.created_at,
+        )
+        for a in rows
+    ]
+
+
+@router.delete(
+    "/references/{reference_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def delete_reference(
+    project_id: str,
+    reference_id: str,
+    db: Session = Depends(get_db),
+) -> None:
+    _require_project(db, project_id)
+    asset = db.get(MediaAsset, reference_id)
+    if asset is None or asset.project_id != project_id or asset.kind != AssetKind.REFERENCE:
+        raise HTTPException(status_code=404, detail="reference not found")
+    p = Path(asset.path)
+    p.unlink(missing_ok=True)
+    db.delete(asset)
+    db.commit()
 
 
 @router.post(

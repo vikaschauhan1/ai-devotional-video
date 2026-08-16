@@ -28,6 +28,7 @@ from backend.app.schemas.lyrics import (
     VisualIntensity,
 )
 from backend.app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
+from backend.app.schemas.references import ReferenceOut
 from backend.app.schemas.render import RenderFinalRequest, RenderFinalResponse
 from backend.app.schemas.scene import SceneRead
 from backend.app.schemas.scenes import (
@@ -75,6 +76,7 @@ __all__ = [
     "ProjectCreate",
     "ProjectRead",
     "ProjectUpdate",
+    "ReferenceOut",
     "RenderFinalRequest",
     "RenderFinalResponse",
     "SceneOut",
